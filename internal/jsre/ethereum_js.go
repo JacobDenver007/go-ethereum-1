@@ -5197,6 +5197,10 @@ var blockCall = function (args) {
     return (utils.isString(args[0]) && args[0].indexOf('0x') === 0) ? "eth_getBlockByHash" : "eth_getBlockByNumber";
 };
 
+var blockCallForZipperone = function (args) {
+    return "eth_getBlockByNumberForZipperone";
+};
+
 var transactionFromBlockCall = function (args) {
     return (utils.isString(args[0]) && args[0].indexOf('0x') === 0) ? 'eth_getTransactionByBlockHashAndIndex' : 'eth_getTransactionByBlockNumberAndIndex';
 };
@@ -5279,6 +5283,14 @@ var methods = function () {
     var getBlock = new Method({
         name: 'getBlock',
         call: blockCall,
+        params: 2,
+        inputFormatter: [formatters.inputBlockNumberFormatter, function (val) { return !!val; }],
+        outputFormatter: formatters.outputBlockFormatter
+    });
+
+    var getBlockForZipperone = new Method({
+        name: 'getBlockForZipperone',
+        call: blockCallForZipperone,
         params: 2,
         inputFormatter: [formatters.inputBlockNumberFormatter, function (val) { return !!val; }],
         outputFormatter: formatters.outputBlockFormatter
@@ -5416,6 +5428,7 @@ var methods = function () {
         getStorageAt,
         getCode,
         getBlock,
+        getBlockForZipperone,
         getUncle,
         getCompilers,
         getBlockTransactionCount,

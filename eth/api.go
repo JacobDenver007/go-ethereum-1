@@ -631,6 +631,20 @@ func (s *PublicBlockChainAPI) GetBlockByNumber(blockNr rpc.BlockNumber, fullTx b
 	return nil, nil
 }
 
+func (s *PublicBlockChainAPI) GetBlockByNumberForZipperone(blockNr rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
+	if block := blockByNumber(s.miner, s.bc, blockNr); block != nil {
+		response, err := s.rpcOutputBlockForZipperone(block, true, fullTx)
+		if err == nil && blockNr == rpc.PendingBlockNumber {
+			// Pending blocks need to nil out a few fields
+			for _, field := range []string{"hash", "miner"} {
+				response[field] = nil
+			}
+		}
+		return response, err
+	}
+	return nil, nil
+}
+
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in the block are returned in full
 // detail, otherwise only the transaction hash is returned.
 func (s *PublicBlockChainAPI) GetBlockByHash(blockHash common.Hash, fullTx bool) (map[string]interface{}, error) {
@@ -900,6 +914,55 @@ func (s *PublicBlockChainAPI) rpcOutputBlock(b *types.Block, inclTx bool, fullTx
 	return fields, nil
 }
 
+func (s *PublicBlockChainAPI) rpcOutputBlockForZipperone(b *types.Block, inclTx bool, fullTx bool) (map[string]interface{}, error) {
+	fields := map[string]interface{}{
+		"number":           rpc.NewHexNumber(b.Number()),
+		"hash":             b.Hash(),
+		"parentHash":       b.ParentHash(),
+		"miner":            b.Coinbase(),
+		"gasUsed":          rpc.NewHexNumber(b.GasUsed()),
+		"timestamp":        rpc.NewHexNumber(b.Time()),
+	}
+	if inclTx {
+		formatTx := func(tx *types.Transaction) (interface{}, error) {
+			return tx.Hash(), nil
+		}
+
+		if fullTx {
+			formatTx = func(tx *types.Transaction) (interface{}, error) {
+				if tx.Protected() {
+					tx.SetSigner(types.NewChainIdSigner(s.bc.Config().GetChainID()))
+				}
+				transactionForZipperone, err := newRPCTransactionForZipperone(b, tx.Hash())
+				receipt := core.GetReceipt(s.chainDb, tx.Hash())
+				if receipt != nil {
+					transactionForZipperone.GasUsed = rpc.NewHexNumber(receipt.GasUsed)
+				}
+				return transactionForZipperone, err
+			}
+		}
+
+		txs := b.Transactions()
+		transactions := make([]interface{}, len(txs))
+		var err error
+		for i, tx := range b.Transactions() {
+			if transactions[i], err = formatTx(tx); err != nil {
+				return nil, err
+			}
+		}
+		fields["transactions"] = transactions
+	}
+
+	uncles := b.Uncles()
+	uncleHashes := make([]common.Hash, len(uncles))
+	for i, uncle := range uncles {
+		uncleHashes[i] = uncle.Hash()
+	}
+	fields["uncles"] = uncleHashes
+
+	return fields, nil
+}
+
 // RPCTransaction represents a transaction that will serialize to the RPC representation of a transaction
 type RPCTransaction struct {
 	BlockHash        common.Hash     `json:"blockHash"`
@@ -915,6 +978,16 @@ type RPCTransaction struct {
 	Value            *rpc.HexNumber  `json:"value"`
 	ReplayProtected  bool            `json:"replayProtected"`
 	ChainId          *big.Int        `json:"chainId,omitempty"`
+}
+
+// RPCTransaction represents a transaction that will serialize to the RPC representation of a transaction
+type RPCTransactionForZipperOne struct {
+	Gas              *rpc.HexNumber  `json:"gas"`
+	GasPrice         *rpc.HexNumber  `json:"gasPrice"`
+	GasUsed			 *rpc.HexNumber  `json:"gasUsed"`
+	Result           interface{}     `json:"result"`
+	Hash             common.Hash     `json:"txHash"`
+	Nonce            *rpc.HexNumber  `json:"nonce"`
 }
 
 // newRPCPendingTransaction returns a pending transaction that will serialize to the RPC representation
@@ -981,6 +1054,42 @@ func newRPCTransaction(b *types.Block, txHash common.Hash) (*RPCTransaction, err
 	for idx, tx := range b.Transactions() {
 		if tx.Hash() == txHash {
 			return newRPCTransactionFromBlockIndex(b, idx)
+		}
+	}
+
+	return nil, nil
+}
+
+func newRPCTransactionFromBlockIndexForZipperone(b *types.Block, txIndex int) (*RPCTransactionForZipperOne, error) {
+	if txIndex >= 0 && txIndex < len(b.Transactions()) {
+		tx := b.Transactions()[txIndex]
+		var signer types.Signer = types.BasicSigner{}
+		if tx.Protected() {
+			signer = types.NewChainIdSigner(tx.ChainId())
+		}
+		from, _ := types.Sender(signer, tx)
+
+		res := make(map[string]interface{})
+		res["from"] = from
+		res["to"] = tx.To(),
+		res["value"] = rpc.NewHexNumber(tx.Value())
+
+		return &RPCTransactionForZipperOne{
+			Result:           res,
+			Gas:              rpc.NewHexNumber(tx.Gas()),
+			GasPrice:         rpc.NewHexNumber(tx.GasPrice()),
+			Hash:             tx.Hash(),
+			Nonce:            rpc.NewHexNumber(tx.Nonce()),
+		}, nil
+	}
+
+	return nil, nil
+}
+
+func newRPCTransactionForZipperone(b *types.Block, txHash common.Hash) (*RPCTransactionForZipperOne, error) {
+	for idx, tx := range b.Transactions() {
+		if tx.Hash() == txHash {
+			return newRPCTransactionFromBlockIndexForZipperone(b, idx)
 		}
 	}
 
