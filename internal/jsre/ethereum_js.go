@@ -5266,6 +5266,14 @@ var methods = function () {
         outputFormatter: formatters.outputBigNumberFormatter
     });
 
+    var getBatchBalance = new Method({
+        name: 'getBatchBalance',
+        call: 'eth_getBatchBalance',
+        params: 2,
+        inputFormatter: [formatters.inputAddressFormatter, formatters.inputDefaultBlockNumberFormatter],
+        outputFormatter: formatters.outputBigNumberFormatter
+    });
+
     var getStorageAt = new Method({
         name: 'getStorageAt',
         call: 'eth_getStorageAt',
@@ -5291,7 +5299,7 @@ var methods = function () {
     var getBlockForZipperone = new Method({
         name: 'getBlockForZipperone',
         call: blockCallForZipperone,
-        params: 2,
+        params: 3,
         inputFormatter: [formatters.inputBlockNumberFormatter, function (val) { return !!val; }],
         outputFormatter: formatters.outputBlockFormatter
     });
@@ -5425,6 +5433,7 @@ var methods = function () {
 
     return [
         getBalance,
+        getBatchBalance,
         getStorageAt,
         getCode,
         getBlock,

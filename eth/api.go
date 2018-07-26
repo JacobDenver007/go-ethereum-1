@@ -615,6 +615,19 @@ func (s *PublicBlockChainAPI) GetBalance(address common.Address, blockNr rpc.Blo
 	return state.GetBalance(address), nil
 }
 
+func (s *PublicBlockChainAPI) GetBatchBalance(addresses []common.Address, blockNr rpc.BlockNumber) ([]*rpc.HexNumber, error) {
+	state, _, err := stateAndBlockByNumber(s.miner, s.bc, blockNr, s.chainDb)
+	if state == nil || err != nil {
+		return nil, err
+	}
+	results := make([]*rpc.HexNumber, 0)
+	for _, address := range addresses {
+		re := rpc.NewHexNumber(state.GetBalance(address))
+		results = append(results, re)
+	}
+	return results, nil
+}
+
 // GetBlockByNumber returns the requested block. When blockNr is -1 the chain head is returned. When fullTx is true all
 // transactions in the block are returned in full detail, otherwise only the transaction hash is returned.
 func (s *PublicBlockChainAPI) GetBlockByNumber(blockNr rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
@@ -631,15 +644,17 @@ func (s *PublicBlockChainAPI) GetBlockByNumber(blockNr rpc.BlockNumber, fullTx b
 	return nil, nil
 }
 
-func (s *PublicBlockChainAPI) GetBlockByNumberForZipperone(blockNr rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
+func (s *PublicBlockChainAPI) GetBlockByNumberForZipperone(blockNr rpc.BlockNumber, topics [][]common.Hash, fullTx bool) (map[string]interface{}, error) {
+	fmt.Println("GetBlockByNumberForZipperone")
 	if block := blockByNumber(s.miner, s.bc, blockNr); block != nil {
-		response, err := s.rpcOutputBlockForZipperone(block, true, fullTx)
+		response, err := s.rpcOutputBlockForZipperone(block, true, true)
 		if err == nil && blockNr == rpc.PendingBlockNumber {
 			// Pending blocks need to nil out a few fields
 			for _, field := range []string{"hash", "miner"} {
 				response[field] = nil
 			}
 		}
+		fmt.Println(response)
 		return response, err
 	}
 	return nil, nil
@@ -937,6 +952,11 @@ func (s *PublicBlockChainAPI) rpcOutputBlockForZipperone(b *types.Block, inclTx 
 				receipt := core.GetReceipt(s.chainDb, tx.Hash())
 				if receipt != nil {
 					transactionForZipperone.GasUsed = rpc.NewHexNumber(receipt.GasUsed)
+					if bytes.Compare(receipt.ContractAddress.Bytes(), bytes.Repeat([]byte{0}, 20)) != 0 {
+						res := transactionForZipperone.Result.(map[string]interface{})
+						res["to"] = receipt.ContractAddress
+						transactionForZipperone.Result = res
+					}
 				}
 				return transactionForZipperone, err
 			}
@@ -1071,7 +1091,7 @@ func newRPCTransactionFromBlockIndexForZipperone(b *types.Block, txIndex int) (*
 
 		res := make(map[string]interface{})
 		res["from"] = from
-		res["to"] = tx.To(),
+		res["to"] = tx.To()
 		res["value"] = rpc.NewHexNumber(tx.Value())
 
 		return &RPCTransactionForZipperOne{
